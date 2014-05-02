@@ -148,6 +148,8 @@ public:
 
     void setSoname(const string & newSoname);
 
+    void setVersion(const string & version);
+
     void setInterpreter(const string & newInterpreter);
 
     typedef enum { rpPrint, rpShrink, rpSet } RPathOp;
@@ -910,6 +912,41 @@ string ElfFile<ElfFileParamNames>::getSoname()
 }
 
 template<ElfFileParams>
+void ElfFile<ElfFileParamNames>::setVersion(const string & newVersion)
+{
+    Elf_Shdr & shdrDynamic = findSection(".dynamic");
+    Elf_Shdr & shdrDynStr = findSection(".dynstr");
+    char * strTab = (char *) contents + rdi(shdrDynStr.sh_offset);
+
+    Elf_Dyn * dyn = (Elf_Dyn *) (contents + rdi(shdrDynamic.sh_offset));
+    char * soname = 0;
+    char * needed = 0;
+    size_t found;
+    for ( ; rdi(dyn->d_tag) != DT_NULL; dyn++) {
+        if (rdi(dyn->d_tag) == DT_SONAME) {
+            soname = strTab + rdi(dyn->d_un.d_val);
+            found = string(soname).find("999.999.999");
+            if (found != string::npos) {
+                debug("Matched 999.999.999 in DT_SONAME. Replacing it with `%s'\n", newVersion.c_str());
+                string newSoname = string(soname).replace(found, 11, newVersion);
+                strcpy(soname, newSoname.c_str());
+                changed = true;
+            }
+        }
+        if (rdi(dyn->d_tag) == DT_NEEDED) {
+            needed = strTab + rdi(dyn->d_un.d_val);
+            found = string(needed).find("999.999.999");
+            if (found != string::npos) {
+                debug("Matched 999.999.999 in DT_NEEDED. Replacing it with `%s'\n", newVersion.c_str());
+                string newNeeded = string(needed).replace(found, 11, newVersion);
+                strcpy(needed, newNeeded.c_str());
+                changed = true;
+            }
+        }
+    }
+}
+
+template<ElfFileParams>
 void ElfFile<ElfFileParamNames>::setSoname(const string & newSoname)
 {
     Elf_Shdr & shdrDynamic = findSection(".dynamic");
@@ -1179,7 +1216,9 @@ void ElfFile<ElfFileParamNames>::removeNeeded(set<string> libs)
 static bool printInterpreter = false;
 static bool printSoname = false;
 static bool setSoname = false;
+static bool setVersion = false;
 static string newSoname;
+static string newVersion;
 static string newInterpreter;
 
 static bool shrinkRPath = false;
@@ -1202,6 +1241,9 @@ static void patchElf2(ElfFile & elfFile, mode_t fileMode)
 
     if (setSoname)
         elfFile.setSoname(newSoname);
+
+    if (setVersion)
+        elfFile.setVersion(newVersion);
 
     if (newInterpreter != "")
         elfFile.setInterpreter(newInterpreter);
@@ -1264,6 +1306,7 @@ void showHelp(const string & progName)
   [--print-interpreter]\n\
   [--print-soname]\t\tPrints 'DT_SONAME' entry of .dynamic section. Raises an error if DT_SONAME doesn't exist\n\
   [--set-soname SONAME]\t\tSets 'DT_SONAME' entry to SONAME. Raises an error if DT_SONAME doesn't exist\n\
+  [--set-version VERSION]\n\
   [--set-rpath RPATH]\n\
   [--shrink-rpath]\n\
   [--print-rpath]\n\
@@ -1301,6 +1344,11 @@ int main(int argc, char * * argv)
             if (++i == argc) error("missing argument");
             setSoname = true;
             newSoname = argv[i];
+        }
+        else if (arg == "--set-version") {
+            if (++i == argc) error("missing argument");
+            setVersion = true;
+            newVersion = argv[i];
         }
         else if (arg == "--shrink-rpath") {
             shrinkRPath = true;
