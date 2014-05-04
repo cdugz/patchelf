@@ -914,6 +914,12 @@ string ElfFile<ElfFileParamNames>::getSoname()
 template<ElfFileParams>
 void ElfFile<ElfFileParamNames>::setVersion(const string & newVersion)
 {
+    /* Find all DT_NEEDED and DT_SONAME entries containing "999.999.999"
+       Replace "999.999.999" with newVersion if found.
+       TODO: better size handling
+           - what if newVersion is longer than 11 bytes? Do nothing, or still rewrite?
+           - if rewrite, drop --set-soname call at all, or make an extra call just after??
+    */
     Elf_Shdr & shdrDynamic = findSection(".dynamic");
     Elf_Shdr & shdrDynStr = findSection(".dynstr");
     char * strTab = (char *) contents + rdi(shdrDynStr.sh_offset);
@@ -1306,7 +1312,9 @@ void showHelp(const string & progName)
   [--print-interpreter]\n\
   [--print-soname]\t\tPrints 'DT_SONAME' entry of .dynamic section. Raises an error if DT_SONAME doesn't exist\n\
   [--set-soname SONAME]\t\tSets 'DT_SONAME' entry to SONAME. Raises an error if DT_SONAME doesn't exist\n\
-  [--set-version VERSION]\n\
+  [--set-version VERSION]\t\tLoop through whole .dynamic section, searching for DT_NEEDED and DT_SONAME entries, having 999.999.999 as part of value.\n\
+  \t\t\tIf found, rewrite section, replacing 999.999.999 with VERSION\n\
+  \t\t\t/!\\ Case when VERSION is longer than 11 bytes is NOT handled at all /!\\\n\
   [--set-rpath RPATH]\n\
   [--shrink-rpath]\n\
   [--print-rpath]\n\
